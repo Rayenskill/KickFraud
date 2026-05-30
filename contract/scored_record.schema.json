@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://fraud-hunter/contract/scored_record.schema.json",
+  "title": "Fraud Hunter — frozen contract",
+  "description": "The frozen schema both detector and UI build against (mirrors docs/JSON_CONTRACT.md, detector/schema.py, web/src/types.ts). Changes require a sync with both owners.",
+  "definitions": {
+    "Reason": {
+      "type": "object",
+      "required": ["signal", "weight", "text"],
+      "properties": {
+        "signal": { "type": "string" },
+        "weight": { "type": "number" },
+        "text": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "ScoredRecord": {
+      "type": "object",
+      "required": [
+        "transaction_id", "card_id", "timestamp", "amount", "merchant",
+        "merchant_country", "category", "channel", "fraud_score", "label",
+        "reasons", "card_median", "review_status"
+      ],
+      "properties": {
+        "transaction_id": { "type": "string" },
+        "card_id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "amount": { "type": "number" },
+        "merchant": { "type": "string" },
+        "merchant_country": { "type": "string" },
+        "category": { "type": "string" },
+        "channel": { "type": "string", "enum": ["online", "in_person"] },
+        "device_id": { "type": ["string", "null"] },
+        "ip_address": { "type": ["string", "null"] },
+        "fraud_score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "label": { "type": "string", "enum": ["fraud", "clear"] },
+        "reasons": { "type": "array", "items": { "$ref": "#/definitions/Reason" } },
+        "card_median": { "type": "number" },
+        "review_status": {
+          "type": "string",
+          "enum": ["pending", "approved", "dismissed", "escalated"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "GraphNode": {
+      "type": "object",
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["card", "merchant"] },
+        "flag_count": { "type": "integer" },
+        "suspicious": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "GraphEdge": {
+      "type": "object",
+      "required": ["source", "target", "type"],
+      "properties": {
+        "source": { "type": "string" },
+        "target": { "type": "string" },
+        "type": { "type": "string", "enum": ["co_burst", "shared_ip", "shared_device"] },
+        "weight": { "type": "number" },
+        "ip": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "Graph": {
+      "type": "object",
+      "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": { "type": "array", "items": { "$ref": "#/definitions/GraphNode" } },
+        "edges": { "type": "array", "items": { "$ref": "#/definitions/GraphEdge" } }
+      },
+      "additionalProperties": false
+    }
+  }
+}

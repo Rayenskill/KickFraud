@@ -1,0 +1,14 @@
+{
+  "nodes": [
+    { "id": "QuickPay Online", "type": "merchant", "suspicious": true },
+    { "id": "card_009", "type": "card", "flag_count": 1 },
+    { "id": "card_031", "type": "card", "flag_count": 1 },
+    { "id": "card_015", "type": "card", "flag_count": 1 },
+    { "id": "card_047", "type": "card", "flag_count": 1 }
+  ],
+  "edges": [
+    { "source": "card_009", "target": "QuickPay Online", "type": "co_burst", "weight": 7 },
+    { "source": "card_031", "target": "QuickPay Online", "type": "co_burst", "weight": 6 },
+    { "source": "card_015", "target": "card_047", "type": "shared_ip", "ip": "99.225.114.61" }
+  ]
+}

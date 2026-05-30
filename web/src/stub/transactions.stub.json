@@ -1,0 +1,135 @@
+[
+  {
+    "transaction_id": "tx_001003",
+    "card_id": "card_009",
+    "timestamp": "2026-05-17T14:11:07",
+    "amount": 835.40,
+    "merchant": "QuickPay Online",
+    "merchant_country": "CA",
+    "category": "online_retail",
+    "channel": "online",
+    "device_id": "dev_6b84a60e",
+    "ip_address": "172.58.128.27",
+    "fraud_score": 0.88,
+    "label": "fraud",
+    "reasons": [
+      { "signal": "merchant_burst_cross_card", "weight": 0.46, "text": "'QuickPay Online' hit by 7 cards >$200 in 72 min" },
+      { "signal": "amount_vs_card_median", "weight": 0.42, "text": "$835 is 46x this card's median" }
+    ],
+    "card_median": 18.06,
+    "review_status": "pending"
+  },
+  {
+    "transaction_id": "tx_000996",
+    "card_id": "card_031",
+    "timestamp": "2026-05-05T02:41:00",
+    "amount": 318.00,
+    "merchant": "QuickPay Online",
+    "merchant_country": "CA",
+    "category": "online_retail",
+    "channel": "online",
+    "device_id": "dev_91ad22f0",
+    "ip_address": "99.225.114.61",
+    "fraud_score": 0.84,
+    "label": "fraud",
+    "reasons": [
+      { "signal": "merchant_burst_cross_card", "weight": 0.46, "text": "'QuickPay Online' hit by 6 cards >$200 in 72 min" }
+    ],
+    "card_median": 24.10,
+    "review_status": "pending"
+  },
+  {
+    "transaction_id": "tx_000951",
+    "card_id": "card_049",
+    "timestamp": "2026-05-11T09:14:00",
+    "amount": 4.99,
+    "merchant": "AppGaga",
+    "merchant_country": "US",
+    "category": "online_retail",
+    "channel": "online",
+    "device_id": "dev_7c1190aa",
+    "ip_address": "142.112.31.70",
+    "fraud_score": 0.48,
+    "label": "fraud",
+    "reasons": [
+      { "signal": "velocity_burst", "weight": 0.40, "text": "4 small online txns in 1m48s (card-testing)" },
+      { "signal": "new_device_or_ip_for_card", "weight": 0.08, "text": "new device for this card" }
+    ],
+    "card_median": 6.20,
+    "review_status": "pending"
+  },
+  {
+    "transaction_id": "tx_000940",
+    "card_id": "card_008",
+    "timestamp": "2026-05-09T18:03:00",
+    "amount": 1290.00,
+    "merchant": "GadgetWorld",
+    "merchant_country": "US",
+    "category": "electronics",
+    "channel": "online",
+    "device_id": "dev_5510c3de",
+    "ip_address": "172.58.142.10",
+    "fraud_score": 0.60,
+    "label": "fraud",
+    "reasons": [
+      { "signal": "amount_vs_card_median", "weight": 0.42, "text": "$1290 is 41x this card's median" },
+      { "signal": "high_risk_merchant", "weight": 0.18, "text": "high-risk category over $250 (electronics)" }
+    ],
+    "card_median": 31.50,
+    "review_status": "pending"
+  },
+  {
+    "transaction_id": "tx_000933",
+    "card_id": "card_022",
+    "timestamp": "2026-05-08T07:50:00",
+    "amount": 86.40,
+    "merchant": "AliExpress",
+    "merchant_country": "CN",
+    "category": "online_retail",
+    "channel": "online",
+    "device_id": "dev_2a77ffb1",
+    "ip_address": "142.112.90.4",
+    "fraud_score": 0.44,
+    "label": "fraud",
+    "reasons": [
+      { "signal": "atypical_category_for_card", "weight": 0.22, "text": "gift_card never seen on this card" },
+      { "signal": "atypical_country_for_card", "weight": 0.22, "text": "first CN purchase for this card" }
+    ],
+    "card_median": 22.75,
+    "review_status": "pending"
+  },
+  {
+    "transaction_id": "tx_000412",
+    "card_id": "card_003",
+    "timestamp": "2026-05-12T13:20:00",
+    "amount": 52.13,
+    "merchant": "Amazon.ca",
+    "merchant_country": "CA",
+    "category": "online_retail",
+    "channel": "online",
+    "device_id": "dev_33892b01",
+    "ip_address": "172.58.159.61",
+    "fraud_score": 0.05,
+    "label": "clear",
+    "reasons": [],
+    "card_median": 48.90,
+    "review_status": "pending"
+  },
+  {
+    "transaction_id": "tx_000207",
+    "card_id": "card_045",
+    "timestamp": "2026-05-03T19:45:00",
+    "amount": 11.99,
+    "merchant": "Spotify",
+    "merchant_country": "SE",
+    "category": "subscription",
+    "channel": "online",
+    "device_id": null,
+    "ip_address": null,
+    "fraud_score": 0.03,
+    "label": "clear",
+    "reasons": [],
+    "card_median": 14.20,
+    "review_status": "pending"
+  }
+]

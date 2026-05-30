@@ -1,0 +1,12 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node / Vite
+web/node_modules/
+web/dist/
+
+# Generated deliverable
+transactions_flagged.csv

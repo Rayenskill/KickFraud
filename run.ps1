@@ -10,7 +10,7 @@ if (-not (Test-Path "$root\.venv")) { python -m venv "$root\.venv" }
 # --- 2. Score the CSV once (writes transactions_flagged.csv) ---
 # NOTE: no-op until detector step 1 is implemented; the API serves stub data meanwhile.
 try { & "$root\.venv\Scripts\python.exe" -m detector.score "$root\data\transactions.csv" }
-catch { Write-Host "detector not implemented yet — API will serve stub data." }
+catch { Write-Host "detector not implemented yet - API will serve stub data." }
 
 # --- 3. API ---
 Start-Process -FilePath "$root\.venv\Scripts\python.exe" `

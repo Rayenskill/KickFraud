@@ -140,9 +140,9 @@ export function ReviewQueue({ filters, showToast, refreshTrigger, onUpdate }: Re
           <div className="flag-header">
             <div>
               <div className="flag-amount">${currentRecord.amount.toFixed(2)}</div>
-              <div className="flag-merchant">{currentRecord.merchant} • {currentRecord.card_id}</div>
+              <div className="flag-merchant">{currentRecord.merchant} - {currentRecord.card_id}</div>
               <div style={{fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 4}}>
-                {new Date(currentRecord.timestamp).toLocaleString()} • {currentRecord.channel} • {currentRecord.merchant_country}
+                {new Date(currentRecord.timestamp).toLocaleString()} - {currentRecord.channel} - {currentRecord.merchant_country}
               </div>
             </div>
             <div className={`flag-score ${currentRecord.label === 'clear' ? 'clear' : ''}`}>
@@ -160,7 +160,7 @@ export function ReviewQueue({ filters, showToast, refreshTrigger, onUpdate }: Re
             }}>
               <strong style={{color: 'white'}}>Amount Context: </strong>
               <span>
-                ${currentRecord.amount.toFixed(2)} is {(currentRecord.amount / currentRecord.card_median).toFixed(1)}× this card's median of ${currentRecord.card_median.toFixed(2)}
+                ${currentRecord.amount.toFixed(2)} is {(currentRecord.amount / currentRecord.card_median).toFixed(1)}x this card's median of ${currentRecord.card_median.toFixed(2)}
               </span>
             </div>
           )}

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import ForceGraph2D, { ForceGraphMethods } from "react-force-graph-2d";
 import { fetchGraph } from "./api";
 import type { Graph, GraphNode } from "./types";
@@ -50,7 +50,7 @@ export function RingGraph({ onNodeClick }: RingGraphProps) {
           ref={fgRef}
           width={dimensions.width}
           height={dimensions.height}
-          graphData={graph}
+          graphData={{ nodes: graph.nodes, links: graph.edges as any }}
           nodeLabel="id"
           nodeColor={(node: any) => {
             const n = node as GraphNode;

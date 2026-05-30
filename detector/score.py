@@ -98,7 +98,7 @@ def score_transactions(rows: list[dict]) -> list[ScoredRecord]:
 
 
 def build_graph(records: list[ScoredRecord], rows: list[dict]) -> dict:
-    """Derive ring-graph nodes + edges (co_burst hubs, shared_ip, shared_device).
+    """Derive ring-graph nodes + edges (co_burst hubs, shared_ip, shared_device, and all transactions).
 
     Returns {nodes: [GraphNode.to_dict()], edges: [GraphEdge.to_dict()]}.
     """
@@ -114,23 +114,30 @@ def build_graph(records: list[ScoredRecord], rows: list[dict]) -> dict:
         if r.label == "fraud":
             card_flags[r.card_id] += 1
 
+    # Add all basic transactions to build the full web
+    for r in records:
+        if r.merchant not in nodes_map:
+            nodes_map[r.merchant] = GraphNode(id=r.merchant, type="merchant", flag_count=0)
+        if r.card_id not in nodes_map:
+            nodes_map[r.card_id] = GraphNode(id=r.card_id, type="card", flag_count=card_flags.get(r.card_id, 0))
+            
+        edge_key = (r.card_id, r.merchant, "transaction")
+        if edge_key not in seen_edges:
+            seen_edges.add(edge_key)
+            edges.append(GraphEdge(
+                source=r.card_id,
+                target=r.merchant,
+                type="transaction",
+                weight=1
+            ))
+
     # Co-burst edges from merchant bursts
     merchant_bursts = agg.get("merchant_bursts", {})
     for merchant, bursts in merchant_bursts.items():
-        # Add merchant node
-        nodes_map[merchant] = GraphNode(
-            id=merchant, type="merchant", suspicious=True
-        )
+        if merchant in nodes_map:
+            nodes_map[merchant].suspicious = True
         for burst in bursts:
             for card_id in burst["cards"]:
-                # Add card node
-                if card_id not in nodes_map:
-                    nodes_map[card_id] = GraphNode(
-                        id=card_id,
-                        type="card",
-                        flag_count=card_flags.get(card_id, 0),
-                    )
-                # Add co_burst edge
                 edge_key = (card_id, merchant, "co_burst")
                 if edge_key not in seen_edges:
                     seen_edges.add(edge_key)

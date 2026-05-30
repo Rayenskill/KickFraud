@@ -33,11 +33,50 @@ export async function fetchTransactions(f: TransactionFilters = {}): Promise<Sco
 export const fetchTransaction = (id: string) => get<ScoredRecord>(`/transaction/${id}`);
 export const fetchGraph = () => get<Graph>("/graph");
 
-// TODO (step 2/3): server returns 501 until implemented.
-export async function review(id: string, decision: Decision, reviewer: string): Promise<void> {
-  await fetch(`${BASE}/review/${id}`, {
+export interface ReviewResponse {
+  transaction_id: string;
+  review_status: string;
+  suppressed: string[];
+  new_flag_count: number;
+  audit_id: string;
+}
+
+export async function review(id: string, decision: Decision, reviewer: string = "system"): Promise<ReviewResponse> {
+  const res = await fetch(`${BASE}/review/${id}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ decision, reviewer }),
   });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
 }
+
+export interface UndoResponse {
+  undone: string | null;
+  restored_status?: string;
+  new_flag_count?: number;
+}
+
+export async function postUndo(): Promise<UndoResponse> {
+  const res = await fetch(`${BASE}/undo`, { method: "POST" });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+export interface ThresholdResponse {
+  threshold: number;
+  old_flag_count: number;
+  new_flag_count: number;
+}
+
+export async function postThreshold(fpCost: number, fnCost: number): Promise<ThresholdResponse> {
+  const res = await fetch(`${BASE}/threshold`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fp_cost: fpCost, fn_cost: fnCost }),
+  });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+export const fetchAudit = () => get<{ entries: any[] }>("/audit");

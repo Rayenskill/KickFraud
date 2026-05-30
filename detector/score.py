@@ -6,27 +6,198 @@ Run once at API startup, or standalone:
 from __future__ import annotations
 
 import sys
+from collections import defaultdict
+
+from detector.aggregates import build_aggregates
+from detector.baselines import build_card_baselines
+from detector.schema import GraphEdge, GraphNode, Reason, ScoredRecord
+from detector.signals import SIGNALS
 
 # Default cost-aware cutoff over fixed 0..1 scores; POST /threshold moves this live.
 DEFAULT_THRESHOLD = 0.42
 
+# Maximum possible raw score (sum of all weights) — used for normalization.
+_MAX_RAW_SCORE = sum(
+    getattr(__import__("detector.signals", fromlist=[""]), w)
+    for w in dir(__import__("detector.signals", fromlist=[""]))
+    if w.startswith("W_")
+)
 
-def score_transactions(rows: list[dict]) -> list:
+
+def _compute_max_raw() -> float:
+    """Compute the sum of all W_ weight constants in signals.py."""
+    import detector.signals as sig
+    total = 0.0
+    for name in dir(sig):
+        if name.startswith("W_"):
+            total += getattr(sig, name)
+    return total
+
+
+def score_transactions(rows: list[dict]) -> list[ScoredRecord]:
     """Build baselines + aggregates, run every signal per row, return ScoredRecords.
 
-    TODO (step 1): baselines.build_card_baselines -> aggregates.build_aggregates ->
-    for each row collect fired Reasons from signals.SIGNALS -> fraud_score = normalized
-    sum of weights -> rank reasons by weight desc -> label vs DEFAULT_THRESHOLD.
+    Pipeline:
+    1. baselines.build_card_baselines -> per-card profiles
+    2. aggregates.build_aggregates -> cross-card maps
+    3. For each row: collect fired Reasons from signals.SIGNALS
+    4. fraud_score = normalized sum of weights (0..1)
+    5. Rank reasons by weight desc
+    6. Label vs DEFAULT_THRESHOLD
     """
-    raise NotImplementedError("detector.score.score_transactions — step 1")
+    baselines = build_card_baselines(rows)
+    agg = build_aggregates(rows)
+    max_raw = _compute_max_raw()
+    if max_raw == 0:
+        max_raw = 1.0
+
+    records: list[ScoredRecord] = []
+    for row in rows:
+        card_id = row["card_id"]
+        baseline = baselines.get(card_id, {})
+
+        # Run every signal
+        fired: list[Reason] = []
+        for signal_fn in SIGNALS:
+            result = signal_fn(row, baseline, agg)
+            if result is not None:
+                fired.append(result)
+
+        # Compute normalized score
+        raw_score = sum(r.weight for r in fired)
+        fraud_score = min(raw_score, 1.0)
+
+        # Rank reasons by weight descending
+        fired.sort(key=lambda r: r.weight, reverse=True)
+
+        # Label vs threshold
+        label = "fraud" if fraud_score >= DEFAULT_THRESHOLD else "clear"
+
+        record = ScoredRecord(
+            transaction_id=row["transaction_id"],
+            card_id=card_id,
+            timestamp=row["timestamp"],
+            amount=row["amount"],
+            merchant=row["merchant"],
+            merchant_country=row["merchant_country"],
+            category=row["category"],
+            channel=row["channel"],
+            card_median=baseline.get("amount_median", 0.0),
+            device_id=row.get("device_id"),
+            ip_address=row.get("ip_address"),
+            fraud_score=round(fraud_score, 4),
+            label=label,
+            reasons=fired,
+            review_status="pending",
+        )
+        # Stash cardholder_country for CSV export
+        record.cardholder_country = row.get("cardholder_country", "")  # type: ignore[attr-defined]
+        records.append(record)
+
+    return records
 
 
-def build_graph(records: list) -> dict:
-    """Derive ring-graph nodes + edges (co_burst hubs, shared_ip, shared_device). TODO (step 1)."""
-    raise NotImplementedError("detector.score.build_graph — step 1")
+def build_graph(records: list[ScoredRecord], rows: list[dict]) -> dict:
+    """Derive ring-graph nodes + edges (co_burst hubs, shared_ip, shared_device).
+
+    Returns {nodes: [GraphNode.to_dict()], edges: [GraphEdge.to_dict()]}.
+    """
+    agg = build_aggregates(rows)
+
+    nodes_map: dict[str, GraphNode] = {}
+    edges: list[GraphEdge] = []
+    seen_edges: set[tuple] = set()
+
+    # Count flags per card
+    card_flags: dict[str, int] = defaultdict(int)
+    for r in records:
+        if r.label == "fraud":
+            card_flags[r.card_id] += 1
+
+    # Co-burst edges from merchant bursts
+    merchant_bursts = agg.get("merchant_bursts", {})
+    for merchant, bursts in merchant_bursts.items():
+        # Add merchant node
+        nodes_map[merchant] = GraphNode(
+            id=merchant, type="merchant", suspicious=True
+        )
+        for burst in bursts:
+            for card_id in burst["cards"]:
+                # Add card node
+                if card_id not in nodes_map:
+                    nodes_map[card_id] = GraphNode(
+                        id=card_id,
+                        type="card",
+                        flag_count=card_flags.get(card_id, 0),
+                    )
+                # Add co_burst edge
+                edge_key = (card_id, merchant, "co_burst")
+                if edge_key not in seen_edges:
+                    seen_edges.add(edge_key)
+                    edges.append(GraphEdge(
+                        source=card_id,
+                        target=merchant,
+                        type="co_burst",
+                        weight=len(burst["cards"]),
+                    ))
+
+    # Shared IP edges
+    ip_to_cards = agg.get("ip_to_cards", {})
+    for ip, cards in ip_to_cards.items():
+        if len(cards) < 2:
+            continue
+        card_list = sorted(cards)
+        for i in range(len(card_list)):
+            for j in range(i + 1, len(card_list)):
+                edge_key = (card_list[i], card_list[j], "shared_ip")
+                if edge_key not in seen_edges:
+                    seen_edges.add(edge_key)
+                    # Add card nodes
+                    for cid in (card_list[i], card_list[j]):
+                        if cid not in nodes_map:
+                            nodes_map[cid] = GraphNode(
+                                id=cid,
+                                type="card",
+                                flag_count=card_flags.get(cid, 0),
+                            )
+                    edges.append(GraphEdge(
+                        source=card_list[i],
+                        target=card_list[j],
+                        type="shared_ip",
+                        ip=ip,
+                    ))
+
+    # Shared device edges
+    dev_to_cards = agg.get("device_to_cards", {})
+    for dev, cards in dev_to_cards.items():
+        if len(cards) < 2:
+            continue
+        card_list = sorted(cards)
+        for i in range(len(card_list)):
+            for j in range(i + 1, len(card_list)):
+                edge_key = (card_list[i], card_list[j], "shared_device")
+                if edge_key not in seen_edges:
+                    seen_edges.add(edge_key)
+                    for cid in (card_list[i], card_list[j]):
+                        if cid not in nodes_map:
+                            nodes_map[cid] = GraphNode(
+                                id=cid,
+                                type="card",
+                                flag_count=card_flags.get(cid, 0),
+                            )
+                    edges.append(GraphEdge(
+                        source=card_list[i],
+                        target=card_list[j],
+                        type="shared_device",
+                    ))
+
+    return {
+        "nodes": [n.to_dict() for n in nodes_map.values()],
+        "edges": [e.to_dict() for e in edges],
+    }
 
 
-def relabel(records: list, threshold: float = DEFAULT_THRESHOLD) -> list:
+def relabel(records: list[ScoredRecord], threshold: float = DEFAULT_THRESHOLD) -> list[ScoredRecord]:
     """Re-label in place against a cutoff over fixed scores (used by POST /threshold)."""
     for r in records:
         r.label = "fraud" if r.fraud_score >= threshold else "clear"
@@ -39,9 +210,11 @@ def main(argv: list[str]) -> int:
     path = argv[0] if argv else "data/transactions.csv"
     rows = io.load_transactions(path)
     records = score_transactions(rows)
+    graph = build_graph(records, rows)
     io.write_flagged_csv(records, "transactions_flagged.csv")
     flagged = sum(1 for r in records if r.label == "fraud")
     print(f"scored {len(records)} rows, flagged {flagged} -> transactions_flagged.csv")
+    print(f"graph: {len(graph['nodes'])} nodes, {len(graph['edges'])} edges")
     return 0
 
 

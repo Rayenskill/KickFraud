@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { ReviewQueue } from "./ReviewQueue";
 import { RingGraph } from "./RingGraph";
 import { Filters } from "./Filters";
+import { IngestForm } from "./IngestForm";
 import { TransactionFilters } from "./api";
 
 export function App() {
@@ -26,6 +27,7 @@ export function App() {
       <section className="left-panel">
         <div className="glass-panel">
           <Filters filters={filters} setFilters={setFilters} onThresholdChange={triggerRefresh} />
+          <IngestForm onIngested={triggerRefresh} showToast={showToast} />
         </div>
         <div className="glass-panel queue-container">
           <ReviewQueue 

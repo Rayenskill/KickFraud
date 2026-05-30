@@ -1,5 +1,12 @@
 // Typed client for the FastAPI backend. Dev requests go through the Vite /api proxy.
-import type { Decision, Graph, ScoredRecord, TransactionsResponse } from "./types";
+import type {
+  Decision,
+  Graph,
+  Notification,
+  RoutingDecision,
+  ScoredRecord,
+  TransactionsResponse,
+} from "./types";
 
 const BASE = "/api";
 
@@ -14,9 +21,15 @@ export interface TransactionFilters {
   merchant?: string;
   category?: string;
   reason?: string;
+  channel?: string;
   min_score?: number;
   max_score?: number;
+  min_amount?: number;
+  max_amount?: number;
+  date_from?: string;
+  date_to?: string;
   status?: string;
+  action?: string;
   sort?: string;
 }
 
@@ -32,6 +45,32 @@ export async function fetchTransactions(f: TransactionFilters = {}): Promise<Sco
 
 export const fetchTransaction = (id: string) => get<ScoredRecord>(`/transaction/${id}`);
 export const fetchGraph = () => get<Graph>("/graph");
+
+export interface SummaryResponse {
+  transaction_id: string;
+  summary: string | null;
+  enabled: boolean;
+}
+export const fetchSummary = (id: string) => get<SummaryResponse>(`/transaction/${id}/summary`);
+
+export const fetchNotifications = () =>
+  get<{ count: number; results: Notification[] }>("/notifications");
+
+export interface IngestResponse {
+  record: ScoredRecord;
+  decision: RoutingDecision;
+  notification: Notification | null;
+}
+
+export async function createTransaction(body: Record<string, unknown>): Promise<IngestResponse> {
+  const res = await fetch(`${BASE}/transactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
 
 export interface ReviewResponse {
   transaction_id: string;

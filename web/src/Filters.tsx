@@ -3,18 +3,27 @@ import { TransactionFilters, postThreshold } from "./api";
 
 interface FiltersProps {
   filters: TransactionFilters;
-  setFilters: (f: TransactionFilters | ((prev: TransactionFilters) => TransactionFilters)) => void;
+  setFilters: (
+    f: TransactionFilters | ((prev: TransactionFilters) => TransactionFilters)
+  ) => void;
   onThresholdChange: () => void;
 }
 
-export function Filters({ filters, setFilters, onThresholdChange }: FiltersProps) {
-  const [costRatio, setCostRatio] = useState(5); // fn_cost / fp_cost, default 5
+export function Filters({
+  filters,
+  setFilters,
+  onThresholdChange,
+}: FiltersProps) {
+  const [sensitivity, setSensitivity] = useState(50); // 0=lenient, 100=aggressive
   const [flagCount, setFlagCount] = useState<number | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "/" && document.activeElement !== searchRef.current) {
+      if (
+        e.key === "/" &&
+        document.activeElement !== searchRef.current
+      ) {
         e.preventDefault();
         searchRef.current?.focus();
       }
@@ -23,11 +32,16 @@ export function Filters({ filters, setFilters, onThresholdChange }: FiltersProps
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const handleSliderChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const ratio = parseInt(e.target.value);
-    setCostRatio(ratio);
+  const handleSliderChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const val = parseInt(e.target.value);
+    setSensitivity(val);
+
+    // Map 0..100 sensitivity to fn_cost 1..20
+    const fn_cost = Math.max(1, Math.round((val / 100) * 20));
     try {
-      const res = await postThreshold(1, ratio);
+      const res = await postThreshold(1, fn_cost);
       setFlagCount(res.new_flag_count);
       onThresholdChange();
     } catch (err) {
@@ -35,54 +49,66 @@ export function Filters({ filters, setFilters, onThresholdChange }: FiltersProps
     }
   };
 
+  const sensitivityLabel =
+    sensitivity < 30
+      ? "Lenient"
+      : sensitivity < 70
+        ? "Balanced"
+        : "Aggressive";
+
   return (
     <div className="filters-container">
-      <input 
+      <input
         ref={searchRef}
-        type="text" 
-        placeholder="Search merchant or card (/ to focus)" 
+        type="text"
+        placeholder="Search merchant or card... (press /)"
         value={filters.merchant || filters.card_id || ""}
         onChange={(e) => {
           const val = e.target.value;
-          // Simple heuristic: if it looks like a card id, search card, else merchant
           if (val.startsWith("card_")) {
-            setFilters(prev => ({ ...prev, card_id: val, merchant: undefined }));
+            setFilters((prev) => ({
+              ...prev,
+              card_id: val,
+              merchant: undefined,
+            }));
           } else {
-            setFilters(prev => ({ ...prev, merchant: val, card_id: undefined }));
+            setFilters((prev) => ({
+              ...prev,
+              merchant: val,
+              card_id: undefined,
+            }));
           }
         }}
       />
-      <div className="cost-slider-group">
-        <label>
-          <span>FP / FN Cost Ratio</span>
-          <span>1:{costRatio}</span>
-        </label>
-        <input 
-          type="range" 
-          min={1} 
-          max={20} 
-          value={costRatio} 
-          onChange={handleSliderChange} 
+
+      <div className="sensitivity-group">
+        <div className="sensitivity-header">
+          <span className="sensitivity-label">Fraud Sensitivity</span>
+          <span className={`sensitivity-value sensitivity-${sensitivityLabel.toLowerCase()}`}>
+            {sensitivityLabel}
+          </span>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={sensitivity}
+          onChange={handleSliderChange}
+          className="sensitivity-slider"
         />
+        <div className="sensitivity-hints">
+          <span>Fewer flags</span>
+          <span>More flags</span>
+        </div>
         {flagCount !== null && (
-          <div style={{fontSize: '0.8rem', color: 'var(--accent-blue)', marginTop: 4}}>
-            Flags: {flagCount}
+          <div className="sensitivity-count">
+            {flagCount} transactions flagged
           </div>
         )}
       </div>
+
       {(filters.merchant || filters.card_id) && (
-        <button 
-          onClick={() => setFilters({})}
-          style={{
-            background: 'transparent',
-            border: '1px solid var(--border-color)',
-            color: 'var(--text-main)',
-            padding: '6px 12px',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '0.85rem'
-          }}
-        >
+        <button className="clear-btn" onClick={() => setFilters({})}>
           Clear Filters
         </button>
       )}

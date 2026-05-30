@@ -61,10 +61,10 @@ export function App() {
       )}
       
       <div className="keyboard-legend">
-        <span><kbd>A</kbd> Approve (Fraud)</span>
-        <span><kbd>D</kbd> Dismiss (False Positive)</span>
+        <span><kbd>A</kbd> Approve</span>
+        <span><kbd>D</kbd> Dismiss</span>
         <span><kbd>E</kbd> Escalate</span>
-        <span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span>
+        <span><kbd>J</kbd><kbd>K</kbd> Navigate</span>
         <span><kbd>U</kbd> Undo</span>
         <span><kbd>/</kbd> Search</span>
       </div>

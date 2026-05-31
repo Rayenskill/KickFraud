@@ -5,6 +5,7 @@ import {
   postUndo,
   TransactionFilters,
 } from "./api";
+import { AiSummary } from "./AiSummary";
 import type { ScoredRecord } from "./types";
 
 interface ReviewQueueProps {
@@ -407,6 +408,8 @@ export function ReviewQueue({
                         )}
                     </div>
                   )}
+
+                  <AiSummary record={currentRecord} />
 
                   {isReviewed && (
                     <div className="reviewed-status">

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { ReviewQueue } from "./ReviewQueue";
 import { RingGraph } from "./RingGraph";
 import { Filters } from "./Filters";
@@ -22,9 +22,50 @@ export function App() {
     setRefreshTrigger(prev => prev + 1);
   }, []);
 
+  const [leftWidth, setLeftWidth] = useState(380);
+  const [isDragging, setIsDragging] = useState(false);
+  const leftPanelRef = useRef<HTMLElement>(null);
+
+  const startDragging = useCallback(() => {
+    setIsDragging(true);
+  }, []);
+
+  const onDrag = useCallback((e: MouseEvent) => {
+    if (!isDragging || !leftPanelRef.current) return;
+    const newWidth = Math.max(300, Math.min(e.clientX, 800));
+    leftPanelRef.current.style.width = `${newWidth}px`;
+    leftPanelRef.current.style.flex = `0 0 ${newWidth}px`;
+  }, [isDragging]);
+
+  const stopDragging = useCallback(() => {
+    setIsDragging(false);
+    if (leftPanelRef.current) {
+      const currentWidth = parseInt(leftPanelRef.current.style.width);
+      if (!isNaN(currentWidth)) {
+        setLeftWidth(currentWidth);
+      }
+    }
+  }, []);
+
+
+
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', onDrag);
+      window.addEventListener('mouseup', stopDragging);
+    } else {
+      window.removeEventListener('mousemove', onDrag);
+      window.removeEventListener('mouseup', stopDragging);
+    }
+    return () => {
+      window.removeEventListener('mousemove', onDrag);
+      window.removeEventListener('mouseup', stopDragging);
+    };
+  }, [isDragging, onDrag, stopDragging]);
+
   return (
-    <div className="app-container">
-      <section className="left-panel">
+    <div className="app-container" style={{ userSelect: isDragging ? 'none' : 'auto' }}>
+      <section ref={leftPanelRef} className="left-panel" style={{ width: leftWidth, flex: `0 0 ${leftWidth}px` }}>
         <div className="glass-panel">
           <Filters filters={filters} setFilters={setFilters} onThresholdChange={triggerRefresh} />
           <IngestForm onIngested={triggerRefresh} showToast={showToast} />
@@ -38,9 +79,17 @@ export function App() {
           />
         </div>
       </section>
+      
+      <div 
+        className={`resizer ${isDragging ? 'dragging' : ''}`} 
+        onMouseDown={startDragging}
+        title="Drag to resize"
+      />
+
       <aside className="right-panel">
         <div className="glass-panel graph-container">
           <RingGraph 
+            refreshTrigger={refreshTrigger}
             onNodeClick={(id, type) => {
               if (type === 'merchant') setFilters({ merchant: id });
               else setFilters({ card_id: id });

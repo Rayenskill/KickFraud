@@ -4,47 +4,49 @@ import { fetchGraph } from "./api";
 import type { Graph, GraphNode } from "./types";
 
 interface RingGraphProps {
-  onNodeClick: (id: string, type: string) => void;
+  onNodeClick?: (id: string, type: "card" | "merchant") => void;
+  refreshTrigger?: number;
 }
 
-export function RingGraph({ onNodeClick }: RingGraphProps) {
+export function RingGraph({ onNodeClick, refreshTrigger = 0 }: RingGraphProps) {
   const [graph, setGraph] = useState<Graph | null>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<ForceGraphMethods>();
 
   useEffect(() => {
     fetchGraph().then(setGraph).catch(console.error);
-  }, []);
+  }, [refreshTrigger]);
 
   useEffect(() => {
-    if (containerRef.current) {
-      const { clientWidth, clientHeight } = containerRef.current;
-      setDimensions({ width: clientWidth, height: clientHeight });
-    }
-
-    const handleResize = () => {
-      if (containerRef.current) {
+    if (!containerRef.current) return;
+    let timeoutId: number;
+    const observer = new ResizeObserver((entries) => {
+      for (let entry of entries) {
         setDimensions({
-          width: containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight,
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
         });
+        window.clearTimeout(timeoutId);
+        timeoutId = window.setTimeout(() => {
+          if (fgRef.current) {
+            fgRef.current.zoomToFit(400, 50);
+          }
+        }, 150);
       }
+    });
+    observer.observe(containerRef.current);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(timeoutId);
     };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
   }, [graph]);
 
-  // Spread out the simulation once loaded
   useEffect(() => {
     if (fgRef.current && graph) {
       const fg = fgRef.current;
-      // Stronger charge repulsion to spread nodes apart
       fg.d3Force("charge")?.strength(-120);
-      // Longer link distance so clusters breathe
       fg.d3Force("link")?.distance(60);
-      // Re-heat the simulation so the new forces take effect
       fg.d3ReheatSimulation();
     }
   }, [graph]);
@@ -56,47 +58,38 @@ export function RingGraph({ onNodeClick }: RingGraphProps) {
   ).length;
 
   return (
-    <div ref={containerRef} style={{ width: "100%", height: "100%" }}>
-      <div className="graph-overlay">
-        <h3 style={{ fontSize: "0.95rem", marginBottom: 4, fontWeight: 600 }}>
+    <div ref={containerRef} style={{ width: "100%", height: "100%", position: "relative" }}>
+      <div className="graph-overlay glass-panel">
+        <h3 style={{ fontSize: "1rem", marginBottom: 4, fontWeight: 700, color: "var(--accent-blue)" }}>
           Network Map
         </h3>
-        <p
-          style={{
-            fontSize: "0.75rem",
-            color: "var(--text-muted)",
-            lineHeight: 1.4,
-          }}
-        >
+        <p style={{ fontSize: "0.8rem", color: "var(--text-main)", lineHeight: 1.4, fontWeight: 600 }}>
           {graph.nodes.length} entities &middot; {fraudNodes} flagged
-          <br />
-          Click a node to filter queue
         </p>
+        <div className="graph-context-panel">
+          Visualizes connections between cards and merchants. Clusters of nodes sharing IPs or Devices indicate likely coordinated fraud rings. Click a node to filter the review queue.
+        </div>
       </div>
+
       {dimensions.width > 0 && (
         <ForceGraph2D
           ref={fgRef}
           width={dimensions.width}
           height={dimensions.height}
           graphData={{ nodes: graph.nodes, links: graph.edges as any }}
-          /* -------- Node rendering -------- */
           nodeCanvasObject={(node: any, ctx, globalScale) => {
             const n = node as GraphNode;
-            const isHovered = hoveredNode === n.id;
             const isFlagged = (n.flag_count ?? 0) > 0;
             const isMerchant = n.type === "merchant";
 
-            // Size: merchants slightly bigger, cards small
             let radius = isMerchant ? 3 : 1.8;
             if (isFlagged) radius += 0.6;
-            if (isHovered) radius += 1;
 
-            // Color by role
             let fill: string;
-            if (isMerchant && n.suspicious) fill = "#ef4444"; // red
-            else if (isMerchant) fill = "#6366f1"; // indigo
-            else if (isFlagged) fill = "#f59e0b"; // amber
-            else fill = "#334155"; // slate-700, very subtle for normal cards
+            if (isMerchant && n.suspicious) fill = "#ef4444";
+            else if (isMerchant) fill = "#6366f1";
+            else if (isFlagged) fill = "#f59e0b";
+            else fill = "#334155";
 
             const alpha = isFlagged || isMerchant ? 1 : 0.45;
 
@@ -107,7 +100,6 @@ export function RingGraph({ onNodeClick }: RingGraphProps) {
             ctx.fill();
             ctx.globalAlpha = 1;
 
-            // Draw a glow ring around flagged nodes
             if (isFlagged || (isMerchant && n.suspicious)) {
               ctx.beginPath();
               ctx.arc(node.x!, node.y!, radius + 1.5, 0, 2 * Math.PI);
@@ -118,8 +110,7 @@ export function RingGraph({ onNodeClick }: RingGraphProps) {
               ctx.globalAlpha = 1;
             }
 
-            // Label only on hover or for flagged merchants
-            if (isHovered || (isMerchant && n.suspicious)) {
+            if (isMerchant && n.suspicious) {
               const label = n.id;
               const fontSize = Math.max(10 / globalScale, 2.5);
               ctx.font = `${fontSize}px Inter, sans-serif`;
@@ -136,33 +127,28 @@ export function RingGraph({ onNodeClick }: RingGraphProps) {
             ctx.fillStyle = color;
             ctx.fill();
           }}
-          /* -------- Link rendering -------- */
           linkColor={(link: any) => {
             if (link.type === "co_burst") return "rgba(239, 68, 68, 0.35)";
             if (link.type === "shared_ip") return "rgba(245, 158, 11, 0.25)";
-            if (link.type === "shared_device")
-              return "rgba(139, 92, 246, 0.25)";
-            return "rgba(148, 163, 184, 0.06)"; // transaction links: nearly invisible
+            if (link.type === "shared_device") return "rgba(139, 92, 246, 0.25)";
+            return "rgba(148, 163, 184, 0.06)";
           }}
           linkWidth={(link: any) => {
-            if (link.type === "co_burst")
-              return Math.max(0.5, (link.weight || 1) * 0.3);
-            if (link.type === "shared_ip" || link.type === "shared_device")
-              return 0.5;
-            return 0.15; // transaction links: hairline
+            if (link.type === "co_burst") return Math.max(0.5, (link.weight || 1) * 0.3);
+            if (link.type === "shared_ip" || link.type === "shared_device") return 0.5;
+            return 0.15;
           }}
-          /* -------- Interactions -------- */
-          onNodeHover={(node: any) => setHoveredNode(node?.id ?? null)}
           onNodeClick={(node: any) => {
-            onNodeClick(node.id, node.type);
-            if (fgRef.current) {
-              fgRef.current.centerAt(node.x, node.y, 800);
-              fgRef.current.zoom(6, 1200);
+            if (onNodeClick) {
+              onNodeClick(node.id, node.type);
             }
           }}
           backgroundColor="transparent"
-          cooldownTicks={120}
-          enableNodeDrag={true}
+          warmupTicks={100}
+          cooldownTicks={0}
+          enableNodeDrag={false}
+          enableZoomInteraction={true}
+          enablePanInteraction={true}
         />
       )}
     </div>

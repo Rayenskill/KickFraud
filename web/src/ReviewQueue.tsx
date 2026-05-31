@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
   fetchTransactions,
   review,
@@ -22,6 +22,8 @@ function riskLevel(score: number): { label: string; cls: string } {
 }
 
 type ViewMode = "triage" | "table";
+type SortMode = "score_desc" | "score_asc" | "amount_desc" | "date_desc";
+type FilterRisk = "flagged" | "all" | "critical" | "high" | "medium" | "low";
 
 export function ReviewQueue({
   filters,
@@ -29,12 +31,36 @@ export function ReviewQueue({
   refreshTrigger,
   onUpdate,
 }: ReviewQueueProps) {
-  const [records, setRecords] = useState<ScoredRecord[]>([]);
+  const [allRecords, setAllRecords] = useState<ScoredRecord[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedReasons, setExpandedReasons] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("table");
+  const [sortMode, setSortMode] = useState<SortMode>("score_desc");
+  const [filterRisk, setFilterRisk] = useState<FilterRisk>("flagged");
+
+  const records = useMemo(() => {
+    let filtered = allRecords;
+    if (filterRisk !== "all") {
+      filtered = filtered.filter(r => {
+        if (filterRisk === "flagged") return r.label === "fraud";
+        if (filterRisk === "critical") return r.fraud_score >= 0.8;
+        if (filterRisk === "high") return r.fraud_score >= 0.6 && r.fraud_score < 0.8;
+        if (filterRisk === "medium") return r.fraud_score >= 0.42 && r.fraud_score < 0.6;
+        if (filterRisk === "low") return r.fraud_score < 0.42;
+        return true;
+      });
+    }
+
+    return [...filtered].sort((a, b) => {
+      if (sortMode === "score_desc") return b.fraud_score - a.fraud_score;
+      if (sortMode === "score_asc") return a.fraud_score - b.fraud_score;
+      if (sortMode === "amount_desc") return b.amount - a.amount;
+      if (sortMode === "date_desc") return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      return 0;
+    });
+  }, [allRecords, sortMode, filterRisk]);
 
   const stateRef = useRef({ records, currentIndex });
 
@@ -46,7 +72,7 @@ export function ReviewQueue({
     try {
       setLoading(true);
       const data = await fetchTransactions(filters);
-      setRecords(data);
+      setAllRecords(data);
       setCurrentIndex(0);
       setExpandedReasons(false);
       setError(null);
@@ -90,12 +116,15 @@ export function ReviewQueue({
       if (currentIndex < records.length - 1) {
         setCurrentIndex((prev) => prev + 1);
       }
-      const updatedRecords = [...records];
-      updatedRecords[currentIndex] = {
-        ...record,
-        review_status: (decision + "ed") as any,
-      };
-      setRecords(updatedRecords);
+      const updatedRecords = [...allRecords];
+      const realIndex = allRecords.findIndex(r => r.transaction_id === record.transaction_id);
+      if (realIndex >= 0) {
+        updatedRecords[realIndex] = {
+          ...record,
+          review_status: (decision + "ed") as any,
+        };
+        setAllRecords(updatedRecords);
+      }
       setExpandedReasons(false);
       onUpdate();
     } catch (e) {
@@ -162,66 +191,87 @@ export function ReviewQueue({
 
   // Risk counts
   const riskCounts = {
-    critical: records.filter((r) => r.fraud_score >= 0.8).length,
-    high: records.filter((r) => r.fraud_score >= 0.6 && r.fraud_score < 0.8).length,
-    medium: records.filter((r) => r.fraud_score >= 0.42 && r.fraud_score < 0.6).length,
-    low: records.filter((r) => r.fraud_score < 0.42).length,
+    critical: allRecords.filter((r) => r.fraud_score >= 0.8).length,
+    high: allRecords.filter((r) => r.fraud_score >= 0.6 && r.fraud_score < 0.8).length,
+    medium: allRecords.filter((r) => r.fraud_score >= 0.42 && r.fraud_score < 0.6).length,
+    low: allRecords.filter((r) => r.fraud_score < 0.42).length,
   };
 
   return (
     <>
       {/* Header */}
       <div className="queue-header">
-        <div>
-          <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>
+        {/* Row 1: title + risk summary */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: "white" }}>
             Transactions
           </h2>
           <div className="risk-summary">
             {riskCounts.critical > 0 && (
-              <span className="risk-dot risk-critical">
-                {riskCounts.critical} critical
-              </span>
+              <span className="risk-dot risk-critical">{riskCounts.critical} critical</span>
             )}
             {riskCounts.high > 0 && (
-              <span className="risk-dot risk-high">
-                {riskCounts.high} high
-              </span>
+              <span className="risk-dot risk-high">{riskCounts.high} high</span>
             )}
             {riskCounts.medium > 0 && (
-              <span className="risk-dot risk-medium">
-                {riskCounts.medium} med
-              </span>
+              <span className="risk-dot risk-medium">{riskCounts.medium} med</span>
             )}
-            <span className="risk-dot risk-low-dot">
-              {riskCounts.low} low
-            </span>
           </div>
         </div>
-        <div className="view-toggle">
-          <button
-            className={`toggle-btn ${viewMode === "table" ? "active" : ""}`}
-            onClick={() => setViewMode("table")}
-            title="Table view"
+
+        {/* Row 2: controls toolbar */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          {/* Filter dropdown */}
+          <select
+            value={filterRisk}
+            onChange={e => setFilterRisk(e.target.value as FilterRisk)}
+            className="ctrl-select"
           >
-            Table
-          </button>
-          <button
-            className={`toggle-btn ${viewMode === "triage" ? "active" : ""}`}
-            onClick={() => setViewMode("triage")}
-            title="Triage view"
+            <option value="flagged">🚩 Flagged</option>
+            <option value="all">All</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+
+          {/* Sort dropdown */}
+          <select
+            value={sortMode}
+            onChange={e => setSortMode(e.target.value as SortMode)}
+            className="ctrl-select"
           >
-            Triage
-          </button>
-          <span
-            style={{
-              color: "var(--text-muted)",
-              fontSize: "0.8rem",
-              marginLeft: 8,
-            }}
-          >
-            {records.length} txns
-          </span>
+            <option value="score_desc">↓ Score</option>
+            <option value="score_asc">↑ Score</option>
+            <option value="amount_desc">↓ Amount</option>
+            <option value="date_desc">🕐 Recent</option>
+          </select>
+
+          {/* Spacer */}
+          <div style={{ flex: 1 }} />
+
+          {/* View toggle */}
+          <div className="view-mode-toggle">
+            <button
+              className={viewMode === "table" ? "view-btn active" : "view-btn"}
+              onClick={() => setViewMode("table")}
+              title="Table view"
+            >
+              ≡ Table
+            </button>
+            <button
+              className={viewMode === "triage" ? "view-btn active" : "view-btn"}
+              onClick={() => setViewMode("triage")}
+              title="Triage view"
+            >
+              ⚡ Triage
+            </button>
+          </div>
         </div>
+
+        <span style={{ color: "var(--text-muted)", fontSize: "0.75rem", marginTop: 4, display: "block" }}>
+          Showing {records.length} of {allRecords.length}
+        </span>
       </div>
 
       {/* ===== TABLE VIEW ===== */}

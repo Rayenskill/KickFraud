@@ -27,6 +27,7 @@ app.add_middleware(
 )
 
 # In-memory state, populated at startup.
+ROWS: list[dict] = []
 RECORDS: list[dict] = []
 GRAPH: dict = {"nodes": [], "edges": []}
 STATE = ReviewState()
@@ -36,14 +37,14 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def load_state() -> None:
-    global RECORDS, GRAPH
+    global ROWS, RECORDS, GRAPH
     
     csv_path = os.path.join(_ROOT, "data", "transactions.csv")
-    rows = load_transactions(csv_path)
-    scored_records = score_transactions(rows)
+    ROWS = load_transactions(csv_path)
+    scored_records = score_transactions(ROWS)
     
     RECORDS = [r.to_dict() for r in scored_records]
-    GRAPH = build_graph(scored_records, rows)
+    GRAPH = build_graph(scored_records, ROWS)
 
 
 @app.on_event("startup")
@@ -100,7 +101,6 @@ def get_transaction(tid: str) -> dict:
             return d
     raise HTTPException(status_code=404, detail="unknown transaction_id")
 
-
 @app.get("/graph")
 def get_graph() -> dict:
     return GRAPH
@@ -150,7 +150,7 @@ def undo() -> dict:
 
 @app.post("/threshold")
 def set_threshold(body: dict) -> dict:
-    global THRESHOLD, RECORDS
+    global THRESHOLD, RECORDS, GRAPH
     fp_cost = body.get("fp_cost", 1)
     fn_cost = body.get("fn_cost", 5)
     
@@ -170,6 +170,32 @@ def set_threshold(body: dict) -> dict:
         
     for r in RECORDS:
         r["label"] = "fraud" if r["fraud_score"] >= THRESHOLD else "clear"
+        
+    # Rebuild graph to reflect new fraud labels
+    # We must construct ScoredRecord objects to pass to build_graph
+    from detector.schema import ScoredRecord
+    scored_records = []
+    for r in RECORDS:
+        sr = ScoredRecord(
+            transaction_id=r["transaction_id"],
+            card_id=r["card_id"],
+            timestamp=r["timestamp"],
+            amount=r["amount"],
+            merchant=r["merchant"],
+            merchant_country=r["merchant_country"],
+            category=r["category"],
+            channel=r["channel"],
+            card_median=r["card_median"],
+            device_id=r.get("device_id"),
+            ip_address=r.get("ip_address"),
+            fraud_score=r["fraud_score"],
+            label=r["label"],
+            reasons=r["reasons"],
+            review_status=r["review_status"]
+        )
+        scored_records.append(sr)
+        
+    GRAPH = build_graph(scored_records, ROWS)
         
     new_flag_count = sum(
         1 for r in RECORDS 

@@ -10,3 +10,6 @@ web/dist/
 
 # Generated deliverable
 transactions_flagged.csv
+
+# Secrets / local env (MONGO_URI, GEMINI_API_KEY, ...)
+.env

@@ -1,9 +1,16 @@
-"""In-session review state: review-status map, suppression set, session weight overrides,
-undo stack, audit log. No database — everything is session-scoped (docs/ARCHITECTURE.md, API.md).
+"""Review state: review-status map, suppression set, session weight overrides, undo stack,
+audit log.
+
+Suppression / weight overrides / the undo stack remain session-scoped (in memory). Review
+decisions and the audit log are **written through to MongoDB** when connected (see
+api/db.py) so they survive a restart; the calls are no-ops in CSV-fallback mode. See
+docs/DATABASE.md.
 """
 from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
+
+from api import db
 
 class ReviewState:
     def __init__(self) -> None:
@@ -19,7 +26,8 @@ class ReviewState:
         old_status = self.status.get(tid, "pending")
         
         self.status[tid] = decision
-        
+        db.update_review_status(tid, decision)  # write-through (no-op without Mongo)
+
         suppressed_this_time: set[str] = set()
         weight_nudged: str | None = None
         old_weight: float | None = None
@@ -70,6 +78,7 @@ class ReviewState:
             "timestamp": now,
         }
         self.audit_log.append(audit_entry)
+        db.insert_audit(audit_entry)  # write-through (no-op without Mongo)
 
         # Push to undo stack
         self.undo_stack.append({
@@ -102,7 +111,8 @@ class ReviewState:
                 del self.status[tid]
         else:
             self.status[tid] = action["old_status"]
-            
+        db.update_review_status(tid, action["old_status"])  # write-through
+
         # Un-suppress
         for sid in action["suppressed"]:
             if sid in self.suppressed:
@@ -117,8 +127,28 @@ class ReviewState:
                 
         # Remove audit log entry
         self.audit_log = [e for e in self.audit_log if e["audit_id"] != action["audit_id"]]
-        
+        db.delete_audit(action["audit_id"])  # write-through
+
         return {
             "undone": tid,
             "restored_status": action["old_status"]
         }
+
+    def system_event(self, tid: str, action: str, reason: str) -> dict:
+        """Append a non-human audit entry (e.g. the decision tree auto-escalating an
+        ingested transaction). Not reversible via /undo — it's a system record."""
+        entry = {
+            "audit_id": f"aud_{uuid.uuid4().hex[:8]}",
+            "transaction_id": tid,
+            "reviewer": "decision_tree",
+            "decision": action,
+            "reason_at_decision": reason,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        self.audit_log.append(entry)
+        db.insert_audit(entry)
+        return entry
+
+    def load_audit(self, entries: list[dict]) -> None:
+        """Pre-populate the audit log from Mongo at startup."""
+        self.audit_log = list(entries)

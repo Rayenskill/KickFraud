@@ -39,7 +39,42 @@
         "review_status": {
           "type": "string",
           "enum": ["pending", "approved", "dismissed", "escalated"]
-        }
+        },
+        "cardholder_country": { "type": "string" },
+        "ai_summary": { "type": ["string", "null"] },
+        "decision": { "$ref": "#/definitions/RoutingDecision" },
+        "notified": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "RoutingDecision": {
+      "type": "object",
+      "description": "v2: decision-tree routing result attached to ingested transactions.",
+      "required": ["action", "notify"],
+      "properties": {
+        "action": { "type": "string", "enum": ["auto_clear", "queue", "escalate"] },
+        "notify": { "type": "boolean" },
+        "trail": { "type": "array", "items": { "type": "string" } },
+        "used_ai": { "type": "boolean" },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "Notification": {
+      "type": "object",
+      "description": "v2: analyst alert emitted when the decision tree escalates a new transaction.",
+      "required": ["notification_id", "transaction_id", "to", "subject", "action", "sent"],
+      "properties": {
+        "notification_id": { "type": "string" },
+        "transaction_id": { "type": "string" },
+        "to": { "type": "string" },
+        "subject": { "type": "string" },
+        "body": { "type": "string" },
+        "action": { "type": "string", "enum": ["auto_clear", "queue", "escalate"] },
+        "score": { "type": "number" },
+        "transport": { "type": "string" },
+        "created_at": { "type": "string" },
+        "sent": { "type": "boolean" }
       },
       "additionalProperties": false
     },
@@ -60,7 +95,7 @@
       "properties": {
         "source": { "type": "string" },
         "target": { "type": "string" },
-        "type": { "type": "string", "enum": ["co_burst", "shared_ip", "shared_device"] },
+        "type": { "type": "string", "enum": ["co_burst", "shared_ip", "shared_device", "transaction"] },
         "weight": { "type": "number" },
         "ip": { "type": "string" }
       },

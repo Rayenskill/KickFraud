@@ -13,7 +13,10 @@ CHANNELS = ("online", "in_person")
 REVIEW_STATUSES = ("pending", "approved", "dismissed", "escalated")
 DECISIONS = ("approve", "dismiss", "escalate")
 NODE_TYPES = ("card", "merchant")
-EDGE_TYPES = ("co_burst", "shared_ip", "shared_device")
+# "transaction" is the faint card->merchant backbone edge (cross-card edges sit on top).
+EDGE_TYPES = ("co_burst", "shared_ip", "shared_device", "transaction")
+# Decision-tree routing outcomes (see detector/decision_tree.py). Contract v2.
+ROUTING_ACTIONS = ("auto_clear", "queue", "escalate")
 
 
 @dataclass
@@ -47,6 +50,9 @@ class ScoredRecord:
     label: str = "clear"         # derived from current threshold
     reasons: list[Reason] = field(default_factory=list)
     review_status: str = "pending"
+    # --- v2 additive optional fields ---
+    cardholder_country: str = ""        # carried for CSV export (not in v1 contract)
+    ai_summary: str | None = None       # Gemini reviewer summary (lazy; null until requested)
 
     def to_dict(self) -> dict:
         d = asdict(self)

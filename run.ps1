@@ -1,5 +1,5 @@
 # Fraud Hunter — one-command run (Windows / PowerShell).
-# 1) venv + deps  2) score CSV  3) FastAPI :8000  4) web :5173
+# 1) venv + deps  2) seed Mongo from CSV (if configured)  3) FastAPI :8000  4) web :5173
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 
@@ -7,10 +7,9 @@ $root = $PSScriptRoot
 if (-not (Test-Path "$root\.venv")) { python -m venv "$root\.venv" }
 & "$root\.venv\Scripts\python.exe" -m pip install -q -r "$root\api\requirements.txt"
 
-# --- 2. Score the CSV once (writes transactions_flagged.csv) ---
-# NOTE: no-op until detector step 1 is implemented; the API serves stub data meanwhile.
-try { & "$root\.venv\Scripts\python.exe" -m detector.score "$root\data\transactions.csv" }
-catch { Write-Host "detector not implemented yet - API will serve stub data." }
+# --- 2. Seed MongoDB from the CSV (skipped gracefully if MONGO_URI unset/unreachable;
+#        the API then falls back to CSV-backed in-memory mode). Configure secrets in .env. ---
+& "$root\.venv\Scripts\python.exe" -m scripts.seed_mongo
 
 # --- 3. API ---
 Start-Process -FilePath "$root\.venv\Scripts\python.exe" `

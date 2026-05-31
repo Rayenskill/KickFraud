@@ -34,72 +34,78 @@ def _compute_max_raw() -> float:
     return total
 
 
+def score_row(
+    row: dict,
+    baselines: dict,
+    agg: dict,
+    threshold: float = DEFAULT_THRESHOLD,
+) -> ScoredRecord:
+    """Score a single transaction against pre-built baselines + aggregates.
+
+    Extracted from score_transactions so the live-ingestion pipeline
+    (api/ingest.py) can score one new transaction without re-scoring the batch.
+
+    Steps: run every signal -> sum fired weights (clamped to 1.0) -> rank reasons
+    by weight desc -> label vs threshold.
+    """
+    card_id = row["card_id"]
+    baseline = baselines.get(card_id, {})
+
+    fired: list[Reason] = []
+    for signal_fn in SIGNALS:
+        result = signal_fn(row, baseline, agg)
+        if result is not None:
+            fired.append(result)
+
+    raw_score = sum(r.weight for r in fired)
+    fraud_score = min(raw_score, 1.0)
+    fired.sort(key=lambda r: r.weight, reverse=True)
+    label = "fraud" if fraud_score >= threshold else "clear"
+
+    record = ScoredRecord(
+        transaction_id=row["transaction_id"],
+        card_id=card_id,
+        timestamp=row["timestamp"],
+        amount=row["amount"],
+        merchant=row["merchant"],
+        merchant_country=row["merchant_country"],
+        category=row["category"],
+        channel=row["channel"],
+        card_median=baseline.get("amount_median", 0.0),
+        device_id=row.get("device_id"),
+        ip_address=row.get("ip_address"),
+        fraud_score=round(fraud_score, 4),
+        label=label,
+        reasons=fired,
+        review_status="pending",
+    )
+    # Stash cardholder_country for CSV export
+    record.cardholder_country = row.get("cardholder_country", "")  # type: ignore[attr-defined]
+    return record
+
+
 def score_transactions(rows: list[dict]) -> list[ScoredRecord]:
     """Build baselines + aggregates, run every signal per row, return ScoredRecords.
 
     Pipeline:
     1. baselines.build_card_baselines -> per-card profiles
     2. aggregates.build_aggregates -> cross-card maps
-    3. For each row: collect fired Reasons from signals.SIGNALS
-    4. fraud_score = normalized sum of weights (0..1)
-    5. Rank reasons by weight desc
-    6. Label vs DEFAULT_THRESHOLD
+    3. score_row() per transaction (fired reasons, summed weight, label vs threshold)
     """
     baselines = build_card_baselines(rows)
     agg = build_aggregates(rows)
-    max_raw = _compute_max_raw()
-    if max_raw == 0:
-        max_raw = 1.0
-
-    records: list[ScoredRecord] = []
-    for row in rows:
-        card_id = row["card_id"]
-        baseline = baselines.get(card_id, {})
-
-        # Run every signal
-        fired: list[Reason] = []
-        for signal_fn in SIGNALS:
-            result = signal_fn(row, baseline, agg)
-            if result is not None:
-                fired.append(result)
-
-        # Compute normalized score
-        raw_score = sum(r.weight for r in fired)
-        fraud_score = min(raw_score, 1.0)
-
-        # Rank reasons by weight descending
-        fired.sort(key=lambda r: r.weight, reverse=True)
-
-        # Label vs threshold
-        label = "fraud" if fraud_score >= DEFAULT_THRESHOLD else "clear"
-
-        record = ScoredRecord(
-            transaction_id=row["transaction_id"],
-            card_id=card_id,
-            timestamp=row["timestamp"],
-            amount=row["amount"],
-            merchant=row["merchant"],
-            merchant_country=row["merchant_country"],
-            category=row["category"],
-            channel=row["channel"],
-            card_median=baseline.get("amount_median", 0.0),
-            device_id=row.get("device_id"),
-            ip_address=row.get("ip_address"),
-            fraud_score=round(fraud_score, 4),
-            label=label,
-            reasons=fired,
-            review_status="pending",
-        )
-        # Stash cardholder_country for CSV export
-        record.cardholder_country = row.get("cardholder_country", "")  # type: ignore[attr-defined]
-        records.append(record)
-
-    return records
+    return [score_row(row, baselines, agg) for row in rows]
 
 
-def build_graph(records: list[ScoredRecord], rows: list[dict]) -> dict:
+def _rfield(r, name: str):
+    """Read a field from a ScoredRecord OR its dict form (the Mongo cache holds dicts)."""
+    return r.get(name) if isinstance(r, dict) else getattr(r, name)
+
+
+def build_graph(records: list, rows: list[dict]) -> dict:
     """Derive ring-graph nodes + edges (co_burst hubs, shared_ip, shared_device, and all transactions).
 
+    `records` may be ScoredRecord instances (batch path) or dicts (Mongo cache path).
     Returns {nodes: [GraphNode.to_dict()], edges: [GraphEdge.to_dict()]}.
     """
     agg = build_aggregates(rows)
@@ -111,22 +117,24 @@ def build_graph(records: list[ScoredRecord], rows: list[dict]) -> dict:
     # Count flags per card
     card_flags: dict[str, int] = defaultdict(int)
     for r in records:
-        if r.label == "fraud":
-            card_flags[r.card_id] += 1
+        if _rfield(r, "label") == "fraud":
+            card_flags[_rfield(r, "card_id")] += 1
 
     # Add all basic transactions to build the full web
     for r in records:
-        if r.merchant not in nodes_map:
-            nodes_map[r.merchant] = GraphNode(id=r.merchant, type="merchant", flag_count=0)
-        if r.card_id not in nodes_map:
-            nodes_map[r.card_id] = GraphNode(id=r.card_id, type="card", flag_count=card_flags.get(r.card_id, 0))
-            
-        edge_key = (r.card_id, r.merchant, "transaction")
+        merchant = _rfield(r, "merchant")
+        card_id = _rfield(r, "card_id")
+        if merchant not in nodes_map:
+            nodes_map[merchant] = GraphNode(id=merchant, type="merchant", flag_count=0)
+        if card_id not in nodes_map:
+            nodes_map[card_id] = GraphNode(id=card_id, type="card", flag_count=card_flags.get(card_id, 0))
+
+        edge_key = (card_id, merchant, "transaction")
         if edge_key not in seen_edges:
             seen_edges.add(edge_key)
             edges.append(GraphEdge(
-                source=r.card_id,
-                target=r.merchant,
+                source=card_id,
+                target=merchant,
                 type="transaction",
                 weight=1
             ))

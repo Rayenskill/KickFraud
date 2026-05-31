@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fraud Hunter — one-command run (macOS / Linux).
-# 1) venv + deps  2) score CSV  3) FastAPI :8000  4) web :5173
+# 1) venv + deps  2) seed Mongo from CSV (if configured)  3) FastAPI :8000  4) web :5173
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -10,10 +10,9 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$root/.venv/bin/activate"
 pip install -q -r "$root/api/requirements.txt"
 
-# --- 2. Score the CSV once (writes transactions_flagged.csv) ---
-# NOTE: no-op until detector step 1 is implemented; the API serves stub data meanwhile.
-python -m detector.score "$root/data/transactions.csv" || \
-  echo "detector not implemented yet — API will serve stub data."
+# --- 2. Seed MongoDB from the CSV (skipped gracefully if MONGO_URI unset/unreachable;
+#        the API then falls back to CSV-backed in-memory mode). Configure secrets in .env. ---
+python -m scripts.seed_mongo || echo "Mongo seed skipped — API will use CSV fallback."
 
 # --- 3. API ---
 ( cd "$root" && uvicorn api.main:app --port 8000 ) &
